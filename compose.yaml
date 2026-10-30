@@ -1,0 +1,50 @@
+name: profile-api
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: profile
+      POSTGRES_PASSWORD: profile_local
+      POSTGRES_DB: profile
+    volumes:
+      - profile-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U profile -d profile]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  init:
+    build:
+      context: .
+      target: init
+    environment:
+      DATABASE_URL: postgresql://profile:profile_local@db:5432/profile
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      target: runtime
+    environment:
+      DATABASE_URL: postgresql://profile:profile_local@db:5432/profile
+    ports:
+      - "127.0.0.1:${PORT:-3000}:3000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://localhost:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  profile-data:
